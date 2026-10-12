@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Speak2Learn | Interview Practice</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+          rel="stylesheet">
+
+    <!-- Application styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+<main class="shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <a class="brand" href="#top">
+            <span class="brand-icon">S</span>
+            <span>Speak2<span>Learn</span></span>
+        </a>
+
+        <p class="side-label">Placement preparation</p>
+
+        <div class="flow">
+            <div class="flow-step active">
+                <b>1</b>
+                <span>
+                    <strong>Choose a question</strong>
+                    <small>Technical interview round</small>
+                </span>
+            </div>
+
+            <div class="flow-step">
+                <b>2</b>
+                <span>
+                    <strong>Answer aloud</strong>
+                    <small>Browser speech recognition</small>
+                </span>
+            </div>
+
+            <div class="flow-step">
+                <b>3</b>
+                <span>
+                    <strong>Review concepts</strong>
+                    <small>Rubric-based evaluation</small>
+                </span>
+            </div>
+        </div>
+
+        <div class="side-note">
+            <span class="eyebrow">Practice principle</span>
+            <p>
+                Strong interview answers define the idea,
+                explain the mechanism, and use an example.
+            </p>
+        </div>
+
+        <p class="team">Himanshu · Nagendra · Atharv</p>
+    </aside>
+
+
+    <!-- MAIN CONTENT -->
+    <section class="main" id="top">
+
+        <!-- HEADER -->
+        <header>
+            <div>
+                <p class="eyebrow">Interview rehearsal</p>
+                <h1>
+                    Practise the answer<br>
+                    before the <em>interview.</em>
+                </h1>
+            </div>
+
+    
+        </header>
+
+
+        <!-- INTRODUCTION AND QUESTION SELECTOR -->
+        <section class="intro">
+            <div>
+                <p class="eyebrow">Technical interview coach</p>
+
+                <h2>Explain a concept in your own words</h2>
+
+                <p>
+                    Pick a question and deliver your answer aloud.
+                    Speak2Learn transcribes your speech in supported
+                    browsers and checks your answer against a predefined
+                    interviewer rubric.
+                </p>
+            </div>
+
+            <label>
+                Interview domain
+                <select id="question-select"
+                        aria-label="Interview question">
+                    <!-- Options are populated by app.js -->
+                </select>
+            </label>
+        </section>
+
+
+        <!-- QUESTION AND ANSWER CARDS -->
+        <section class="interview-grid">
+
+            <!-- QUESTION CARD -->
+            <article class="question-card">
+                <p class="eyebrow">Question</p>
+
+                <div class="question-number" id="question-number">
+                    01
+                </div>
+
+                <h2 id="question-text"></h2>
+
+                <p id="question-context" class="muted"></p>
+
+                <div class="rubric">
+                    <p class="eyebrow">Evaluator looks for</p>
+                    <ul id="rubric-list"></ul>
+                </div>
+            </article>
+
+
+            <!-- ANSWER CARD -->
+            <article class="answer-card">
+
+                <div class="card-top">
+                    <div>
+                        <p class="eyebrow">Your response</p>
+                        <h2>Record your answer</h2>
+                    </div>
+
+                    <span id="transcription-status" class="status">
+                        Speech recognition ready
+                    </span>
+                </div>
+
+                <p class="muted">
+                    Aim for 60–90 seconds. Your browser transcribes
+                    your answer as you speak. You can edit the
+                    transcript before evaluation.
+                </p>
+
+                <!-- RECORDING BUTTON -->
+                <button id="record-button"
+                        class="record"
+                        type="button">
+                    <span class="record-dot"></span>
+                    <span id="record-label">Start recording</span>
+                </button>
+
+                <!-- TRANSCRIPT HEADER -->
+                <div class="transcript-head">
+                    <span>Your answer transcript</span>
+
+                    <button id="sample-button" type="button">
+                        Load sample answer
+                    </button>
+                </div>
+
+                <!-- ANSWER INPUT -->
+                <label class="sr-only" for="transcript">
+                    Interview answer transcript
+                </label>
+
+                <textarea id="transcript"
+                          rows="9"
+                          placeholder="Your transcribed answer will appear here. You can also type an answer to test the evaluator."></textarea>
+
+                <!-- EVALUATION BUTTON -->
+                <button id="evaluate-button"
+                        class="evaluate"
+                        type="button">
+                    Evaluate my answer <span>→</span>
+                </button>
+
+                <p class="security-note">
+                    This free version uses your browser's speech-recognition
+                    feature. It does not send audio to OpenAI or require an
+                    API key.
+                </p>
+            </article>
+        </section>
+
+
+        <!-- EVALUATION RESULTS -->
+        <section id="evaluation"
+                 class="evaluation hidden"
+                 aria-live="polite">
+
+            <div class="evaluation-head">
+                <div>
+                    <p class="eyebrow">Evaluation result</p>
+
+                    <h2 id="evaluation-title">
+                        Good foundation
+                    </h2>
+
+                    <p id="evaluation-summary" class="muted"></p>
+                </div>
+
+                <div class="readiness">
+                    <strong id="readiness-score">0</strong>
+                    <span>/ 100</span>
+                    <small>readiness score</small>
+                </div>
+            </div>
+
+
+            <!-- FEEDBACK CATEGORIES -->
+            <div class="results-grid">
+
+                <article>
+                    <h3>Covered concepts</h3>
+                    <ul id="covered-list"
+                        class="result-list covered"></ul>
+                </article>
+
+                <article>
+                    <h3>Missing concepts</h3>
+                    <ul id="missing-list"
+                        class="result-list missing"></ul>
+                </article>
+
+                <article>
+                    <h3>Potential misconception</h3>
+                    <ul id="misconception-list"
+                        class="result-list misconception"></ul>
+                </article>
+
+            </div>
+
+            <p class="scope-note">
+                Scores are based on predefined keyword matching.
+                They are intended for practice and may not fully
+                reflect the correctness of an answer.
+            </p>
+        </section>
+
+    </section>
+</main>
+
+<!-- Load JavaScript after the HTML elements -->
+<script src="app.js"></script>
+
+</body>
+</html>
