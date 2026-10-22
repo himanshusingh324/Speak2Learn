@@ -18,11 +18,12 @@
 </head>
 
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <main class="shell">
 
     <!-- SIDEBAR -->
     <aside class="sidebar">
-        <a class="brand" href="#top">
+        <a class="brand" href="#main-content">
             <span class="brand-icon">S</span>
             <span>Speak2<span>Learn</span></span>
         </a>
@@ -30,7 +31,7 @@
         <p class="side-label">Placement preparation</p>
 
         <div class="flow">
-            <div class="flow-step active">
+            <div class="flow-step active" data-flow-step="choose">
                 <b>1</b>
                 <span>
                     <strong>Choose a question</strong>
@@ -38,15 +39,15 @@
                 </span>
             </div>
 
-            <div class="flow-step">
+            <div class="flow-step" data-flow-step="answer">
                 <b>2</b>
                 <span>
                     <strong>Answer aloud</strong>
-                    <small>Browser speech recognition</small>
+                    <small>Speech recognition or typing</small>
                 </span>
             </div>
 
-            <div class="flow-step">
+            <div class="flow-step" data-flow-step="review">
                 <b>3</b>
                 <span>
                     <strong>Review concepts</strong>
@@ -68,7 +69,7 @@
 
 
     <!-- MAIN CONTENT -->
-    <section class="main" id="top">
+    <section class="main" id="main-content" tabindex="-1">
 
         <!-- HEADER -->
         <header>
@@ -99,13 +100,76 @@
                 </p>
             </div>
 
-            <label>
-                Interview domain
-                <select id="question-select"
-                        aria-label="Interview question">
-                    <!-- Options are populated by app.js -->
-                </select>
+            <div class="selector-controls">
+                <label>
+                    Practice mode
+                    <select id="practice-mode">
+                        <option value="built-in">Built-in questions</option>
+                        <option value="reference">PDF reference mode</option>
+                    </select>
+                </label>
+
+                <label id="built-in-question-control">
+                    Interview domain
+                    <select id="question-select"
+                            aria-label="Interview question">
+                        <!-- Options are populated by app.js -->
+                    </select>
+                </label>
+            </div>
+        </section>
+
+        <section id="reference-workspace" class="reference-workspace hidden" aria-labelledby="reference-heading">
+            <div class="reference-heading">
+                <div>
+                    <p class="eyebrow">Local PDF reference</p>
+                    <h2 id="reference-heading">Learn from your own reference material</h2>
+                    <p class="muted">The PDF stays in this browser. Text extraction and phrase matching run locally; OCR and semantic AI comparison are not included.</p>
+                </div>
+            </div>
+
+            <div class="pdf-upload-row">
+                <label class="file-picker" for="reference-pdf">
+                    <span>Upload Reference PDF</span>
+                    <small>Text-based PDF, up to 10 MB</small>
+                </label>
+                <input id="reference-pdf" type="file" accept="application/pdf,.pdf">
+
+                <div id="pdf-file-details" class="pdf-file-details" hidden>
+                    <strong id="pdf-file-name"></strong>
+                    <button id="remove-pdf-button" type="button">Remove PDF and text</button>
+                </div>
+            </div>
+
+            <p id="pdf-status" class="pdf-status idle" role="status" aria-live="polite">Choose a text-based PDF to create a local reference.</p>
+
+            <div class="reference-fields">
+                <label>
+                    Question about this PDF
+                    <textarea id="reference-question" rows="3" placeholder="For example: How does the document explain database indexing?"></textarea>
+                </label>
+
+                <label>
+                    Extracted reference text — review or correct it
+                    <textarea id="reference-text" rows="9" placeholder="Extracted PDF text appears here. You may correct it before creating a rubric."></textarea>
+                </label>
+            </div>
+
+            <div class="reference-rubric-actions">
+                <button id="generate-reference-button" class="secondary-action" type="button">Find relevant excerpts and suggest rubric phrases</button>
+                <p id="reference-rubric-status" class="muted" aria-live="polite">Upload a PDF, add a specific question, then create a local phrase rubric.</p>
+            </div>
+
+            <label class="reference-rubric-label">
+                Explicit local rubric phrases (one two-or-more-word phrase per line)
+                <textarea id="reference-rubric" rows="5" placeholder="Suggested phrases from selected excerpts appear here. Review or edit them before evaluation."></textarea>
             </label>
+
+            <section class="reference-excerpts" aria-labelledby="reference-excerpts-heading">
+                <h3 id="reference-excerpts-heading">Relevant reference excerpts</h3>
+                <p id="reference-excerpts-empty" class="muted">No excerpts selected yet.</p>
+                <ol id="reference-excerpts-list"></ol>
+            </section>
         </section>
 
 
@@ -140,7 +204,7 @@
                         <h2>Record your answer</h2>
                     </div>
 
-                    <span id="transcription-status" class="status">
+                    <span id="transcription-status" class="status" role="status" aria-live="polite">
                         Speech recognition ready
                     </span>
                 </div>
@@ -154,7 +218,10 @@
                 <!-- RECORDING BUTTON -->
                 <button id="record-button"
                         class="record"
-                        type="button">
+                        type="button"
+                        aria-pressed="false"
+                        aria-controls="transcript"
+                        aria-describedby="transcription-status">
                     <span class="record-dot"></span>
                     <span id="record-label">Start recording</span>
                 </button>
@@ -175,7 +242,10 @@
 
                 <textarea id="transcript"
                           rows="9"
+                          aria-describedby="answer-validation"
                           placeholder="Your transcribed answer will appear here. You can also type an answer to test the evaluator."></textarea>
+
+                <p id="answer-validation" class="validation-message" aria-live="polite" aria-atomic="true"></p>
 
                 <!-- EVALUATION BUTTON -->
                 <button id="evaluate-button"
@@ -196,23 +266,24 @@
         <!-- EVALUATION RESULTS -->
         <section id="evaluation"
                  class="evaluation hidden"
-                 aria-live="polite">
+                 role="region"
+                 aria-labelledby="evaluation-title">
 
             <div class="evaluation-head">
                 <div>
                     <p class="eyebrow">Evaluation result</p>
 
-                    <h2 id="evaluation-title">
+                    <h2 id="evaluation-title" tabindex="-1">
                         Good foundation
                     </h2>
 
                     <p id="evaluation-summary" class="muted"></p>
                 </div>
 
-                <div class="readiness">
+                <div class="readiness" aria-label="Rubric coverage score">
                     <strong id="readiness-score">0</strong>
                     <span>/ 100</span>
-                    <small>readiness score</small>
+                    <small>rubric coverage</small>
                 </div>
             </div>
 
@@ -233,7 +304,7 @@
                 </article>
 
                 <article>
-                    <h3>Potential misconception</h3>
+                    <h3>Possible misconceptions</h3>
                     <ul id="misconception-list"
                         class="result-list misconception"></ul>
                 </article>
@@ -241,9 +312,9 @@
             </div>
 
             <p class="scope-note">
-                Scores are based on predefined keyword matching.
-                They are intended for practice and may not fully
-                reflect the correctness of an answer.
+                This is a heuristic rubric-coverage score based on predefined
+                phrase rules. It does not validate technical correctness or
+                measure interview readiness.
             </p>
         </section>
 
@@ -251,7 +322,12 @@
 </main>
 
 <!-- Load JavaScript after the HTML elements -->
+<script src="evaluator.js"></script>
+<script src="pdf-reference-core.js"></script>
+<script src="reference-evaluator.js"></script>
 <script src="app.js"></script>
+<script src="pdfjs-compat.js"></script>
+<script type="module" src="pdf-reference.js"></script>
 
 </body>
 </html>

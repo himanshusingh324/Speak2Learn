@@ -1,257 +1,408 @@
+// Browser UI and speech-recognition controls for Speak2Learn.
+// Rubric data and evaluation logic live in evaluator.js so they can be tested in Node.js.
 
-// ============================================================
-// INTERVIEW PRACTICE APPLICATION - script.js
-// Contains questions, answer evaluation, and speech recognition
-// ============================================================
+const evaluator = window.Speak2LearnEvaluator;
+const referenceEvaluator = window.Speak2LearnReferenceEvaluator;
 
-// 1. QUESTION DATABASE
-const questions = {
-    dbms: {
-        number: "01",
-        label: "DBMS · Indexing",
-        question:
-            "What is database indexing, and how does it improve query performance?",
-        context:
-            "Answer as you would in a backend or database interview. Explain the trade-off as well as the benefit.",
-        sample:
-            "An index is a data structure that helps a database find rows without scanning the whole table. It works like a book index and is often implemented using a B-tree. Indexes speed up reads and WHERE queries, but they use extra storage and can slow INSERT, UPDATE, and DELETE operations because the index also needs to be maintained.",
-        concepts: [
-            ["Index avoids a full table scan",
-                ["index", "find", "without scanning", "full table scan"]],
-            ["Uses a search structure such as a B-tree",
-                ["b-tree", "btree", "data structure", "tree"]],
-            ["Improves read and query performance",
-                ["query performance", "faster", "speed", "reads", "where"]],
-            ["Consumes extra storage",
-                ["storage", "space", "memory"]],
-            ["Write operations have a maintenance cost",
-                ["insert", "update", "delete", "maintain", "write"]]
-        ],
-        mis: [
-            [
-                "index stores duplicate data",
-                "An index is an auxiliary lookup structure; it does not replace the table itself."
-            ],
-            [
-                "index replaces table",
-                "An index is an auxiliary lookup structure; it does not replace the table itself."
-            ]
-        ]
-    },
+if (!evaluator || !referenceEvaluator) {
+    throw new Error("Speak2Learn evaluation helpers could not be loaded.");
+}
 
-    os: {
-        number: "02",
-        label: "Operating Systems · Deadlock",
-        question:
-            "What is deadlock in an operating system, and how can it be prevented?",
-        context:
-            "Structure your response around resources, processes, and the conditions that create a deadlock.",
-        sample:
-            "Deadlock happens when two or more processes are permanently waiting for resources held by each other. The four Coffman conditions are mutual exclusion, hold and wait, no preemption, and circular wait. Prevention works by breaking at least one condition, for example by imposing a fixed order for requesting resources.",
-        concepts: [
-            ["Processes wait indefinitely for resources",
-                ["process", "waiting", "resources", "indefinitely"]],
-            ["Resources are held by other processes",
-                ["held", "each other", "hold"]],
-            ["Four Coffman conditions",
-                ["coffman", "mutual exclusion", "hold and wait",
-                    "no preemption", "circular wait"]],
-            ["Prevention breaks at least one condition",
-                ["prevent", "break", "condition"]],
-            ["Resource ordering is one prevention method",
-                ["order", "ordering", "fixed order"]]
-        ],
-        mis: [
-            [
-                "deadlock is when cpu is slow",
-                "Deadlock is a resource-waiting state, not simply slow execution or a crash."
-            ],
-            [
-                "deadlock means a program crashes",
-                "Deadlock is a resource-waiting state, not simply slow execution or a crash."
-            ]
-        ]
-    },
+const { questions, evaluateAnswer, MINIMUM_WORDS } = evaluator;
 
-    dsa: {
-        number: "03",
-        label: "DSA · Binary Search",
-        question:
-            "Explain binary search and its time complexity. When should you use it?",
-        context:
-            "Make the precondition clear, then walk through how the search space changes.",
-        sample:
-            "Binary search finds a target in a sorted array by comparing it with the middle element. If the target is smaller, it searches the left half; otherwise it searches the right half. Each comparison halves the search space, so its time complexity is O(log n). It should be used when the data is sorted and random access is available.",
-        concepts: [
-            ["Input data must be sorted", ["sorted", "sort"]],
-            ["Compares the target with the middle element",
-                ["middle", "mid", "compare", "target"]],
-            ["Eliminates half the search space each step",
-                ["half", "left", "right", "search space"]],
-            ["Time complexity is O(log n)",
-                ["o log n", "log n", "logarithmic"]],
-            ["Works best with random access",
-                ["random access", "array"]]
-        ],
-        mis: [
-            [
-                "binary search works on any unsorted",
-                "Binary search requires ordered data and has O(log n) time complexity, not O(n)."
-            ],
-            [
-                "o n",
-                "Binary search requires ordered data and has O(log n) time complexity, not O(n)."
-            ]
-        ]
-    }
-};
-
-
-// 2. GET HTML ELEMENTS
 const select = document.querySelector("#question-select");
+const practiceModeSelect = document.querySelector("#practice-mode");
+const builtInQuestionControl = document.querySelector("#built-in-question-control");
+const referenceWorkspace = document.querySelector("#reference-workspace");
+const referenceQuestion = document.querySelector("#reference-question");
+const referenceRubric = document.querySelector("#reference-rubric");
+const referenceRubricStatus = document.querySelector("#reference-rubric-status");
+const referenceExcerptsList = document.querySelector("#reference-excerpts-list");
+const referenceExcerptsEmpty = document.querySelector("#reference-excerpts-empty");
+const sampleButton = document.querySelector("#sample-button");
 const transcript = document.querySelector("#transcript");
 const record = document.querySelector("#record-button");
+const recordLabel = document.querySelector("#record-label");
 const status = document.querySelector("#transcription-status");
+const validation = document.querySelector("#answer-validation");
+const evaluationSection = document.querySelector("#evaluation");
+const evaluationTitle = document.querySelector("#evaluation-title");
+const scopeNote = document.querySelector(".scope-note");
 
 let recognition;
-let listening = false;
+let recordingState = "idle";
+let sessionId = 0;
+let activeSessionId = null;
 let finalText = "";
+let pendingStopMessage = "";
+let pendingStopTone = "ready";
 let recognitionError = "";
+let practiceMode = "built-in";
 
-
-// 3. INITIALIZE QUESTION DROPDOWN
 Object.entries(questions).forEach(([key, question]) => {
     select.add(new Option(question.label, key));
 });
 
-// Return the currently selected question
 const current = () => questions[select.value];
 
-
-// 4. DISPLAY SELECTED QUESTION
-function showQuestion() {
-    const q = current();
-
-    document.querySelector("#question-number").textContent = q.number;
-    document.querySelector("#question-text").textContent = q.question;
-    document.querySelector("#question-context").textContent = q.context;
-
-    // Display the rubric concepts
-    document.querySelector("#rubric-list").innerHTML =
-        q.concepts.map(c => `<li>${c[0]}</li>`).join("");
-
-    // Hide old evaluation results
-    document.querySelector("#evaluation").classList.add("hidden");
-
-    // Clear the answer box
-    transcript.value = "";
+function isReferenceMode() {
+    return practiceMode === "reference";
 }
 
-
-// 5. REUSABLE LIST DISPLAY FUNCTION
-function fill(id, items, fallback) {
-    document.querySelector(id).innerHTML =
-        (items.length ? items : [fallback])
-            .map(item => `<li>${item}</li>`)
-            .join("");
+function getReferenceState() {
+    return window.Speak2LearnPdfReference?.getState() || {
+        phase: "idle",
+        text: "",
+        message: "PDF reference tools are still loading."
+    };
 }
 
+function setStatus(message, tone = "ready") {
+    status.textContent = message;
+    status.classList.remove("recording", "error", "unavailable");
 
-// 6. EVALUATE THE USER'S ANSWER
-function evaluate() {
-    // Normalize the answer to lowercase
-    const text = transcript.value.toLowerCase();
+    if (tone !== "ready") {
+        status.classList.add(tone);
+    }
+}
 
-    // Require at least 12 words
-    if (text.trim().split(/\s+/).length < 12) {
-        alert("Please provide a fuller interview answer before evaluating it.");
+function updateRecordUi() {
+    const isRecording = recordingState === "starting" || recordingState === "listening";
+    const isStopping = recordingState === "stopping";
+
+    record.classList.toggle("recording", isRecording);
+    record.setAttribute("aria-pressed", String(isRecording));
+    record.disabled = !recognition || isStopping;
+
+    if (isStopping) {
+        recordLabel.textContent = "Stopping recording…";
+    } else if (isRecording) {
+        recordLabel.textContent = "Recording… tap to stop";
+    } else {
+        recordLabel.textContent = "Start recording";
+    }
+}
+
+function updateFlow(step) {
+    const steps = ["choose", "answer", "review"];
+    const activeIndex = steps.indexOf(step);
+
+    document.querySelectorAll("[data-flow-step]").forEach(element => {
+        const index = steps.indexOf(element.dataset.flowStep);
+        element.classList.toggle("active", index <= activeIndex);
+    });
+}
+
+function renderRubric(question) {
+    const list = document.querySelector("#rubric-list");
+    list.replaceChildren();
+
+    question.concepts.forEach(concept => {
+        const item = document.createElement("li");
+        item.textContent = concept.label;
+        list.append(item);
+    });
+}
+
+function renderReferenceRubricGuidance() {
+    const list = document.querySelector("#rubric-list");
+    const guidance = [
+        "A specific question linked to the PDF",
+        "Reference excerpts selected by local term overlap",
+        "An explicit, reviewable phrase rubric",
+        "Coverage only — not semantic correctness"
+    ];
+
+    list.replaceChildren();
+    guidance.forEach(text => {
+        const item = document.createElement("li");
+        item.textContent = text;
+        list.append(item);
+    });
+}
+
+function renderReferenceQuestion() {
+    const questionText = referenceQuestion.value.trim();
+    document.querySelector("#question-number").textContent = "PDF";
+    document.querySelector("#question-text").textContent = questionText || "Ask a question about your reference PDF";
+    document.querySelector("#question-context").textContent = questionText
+        ? "The evaluator will only use locally selected excerpts that share meaningful terms with this question."
+        : "Upload a text-based PDF, then ask a specific question. Review its extracted text and phrase rubric before evaluation.";
+    renderReferenceRubricGuidance();
+}
+
+function clearReferenceExcerpts(message = "No excerpts selected yet.") {
+    referenceExcerptsList.replaceChildren();
+    referenceExcerptsEmpty.hidden = false;
+    referenceExcerptsEmpty.textContent = message;
+}
+
+function invalidateReferenceRubric(message) {
+    referenceRubric.value = "";
+    referenceRubricStatus.textContent = message;
+    clearReferenceExcerpts("Refresh the local rubric to select excerpts for the current question and text.");
+}
+
+function renderReferenceExcerpts(passages) {
+    referenceExcerptsList.replaceChildren();
+    referenceExcerptsEmpty.hidden = Boolean(passages.length);
+
+    passages.forEach((passage, index) => {
+        const item = document.createElement("li");
+        const excerpt = passage.text.length > 520
+            ? `${passage.text.slice(0, 520)}…`
+            : passage.text;
+        item.textContent = `Excerpt ${index + 1} (matched: ${passage.matchedTerms.join(", ")}): ${excerpt}`;
+        referenceExcerptsList.append(item);
+    });
+}
+
+function generateReferenceRubric() {
+    const state = getReferenceState();
+
+    if (!state.text.trim()) {
+        referenceRubricStatus.textContent = "Upload a text-based PDF or add extracted reference text before creating a rubric.";
+        clearReferenceExcerpts("No reference text is available.");
         return;
     }
 
-    const q = current();
+    const result = referenceEvaluator.buildReferenceRubric(state.text, referenceQuestion.value);
+    renderReferenceExcerpts(result.passages);
+    referenceRubric.value = result.concepts.join("\n");
 
-    // Identify concepts with matching keywords
-    const covered = q.concepts.filter(concept =>
-        concept[1].some(keyword => text.includes(keyword))
-    );
+    if (!result.passages.length) {
+        referenceRubricStatus.textContent = "No relevant excerpts were found by local term rules. Use a more specific question or review the extracted text.";
+        return;
+    }
 
-    // Identify concepts that were not mentioned
-    const missing = q.concepts.filter(
-        concept => !covered.includes(concept)
-    );
+    if (!result.concepts.length) {
+        referenceRubricStatus.textContent = "Relevant excerpts were found, but no useful two-word phrases could be suggested. Add phrases from the excerpts manually.";
+        return;
+    }
 
-    // Detect common misconceptions
-    const issues = [
-        ...new Set(
-            q.mis
-                .filter(item => text.includes(item[0]))
-                .map(item => item[1])
-        )
-    ];
+    referenceRubricStatus.textContent = `Selected ${result.passages.length} relevant excerpt${result.passages.length === 1 ? "" : "s"}. Review or edit the suggested phrases before evaluating.`;
+}
 
-    // Calculate score: up to 85 for concepts and 15 for no detected misconception
-    const score = Math.max(
-        0,
-        Math.round(
-            (covered.length / q.concepts.length) * 85 +
-            (issues.length ? 0 : 15)
-        )
-    );
-
-    // Update the score display
-    document.querySelector("#readiness-score").textContent = score;
-
-    // Select a result heading
-    document.querySelector("#evaluation-title").textContent =
-        score >= 85
-            ? "Interview-ready explanation"
-            : score >= 55
-                ? "Good foundation - add depth"
-                : "Build the core explanation";
-
-    // Show the evaluation summary
+function showReferenceEvaluation(result) {
+    document.querySelector("#readiness-score").textContent = result.score;
+    evaluationTitle.textContent = "Reference phrase coverage";
     document.querySelector("#evaluation-summary").textContent =
-        `You addressed ${covered.length} of ${q.concepts.length} rubric concepts. ` +
-        (issues.length
-            ? "Review the flagged statement before your next attempt."
-            : "No common misconception was detected.");
+        `Your answer matched ${result.covered.length} of ${result.rubric.length} explicit phrase rubric criteria from ${result.passages.length} selected reference excerpt${result.passages.length === 1 ? "" : "s"}.`;
 
-    // Populate feedback lists
-    fill(
-        "#covered-list",
-        covered.map(c => c[0]),
-        "Start with a concise definition of the concept."
-    );
-
-    fill(
-        "#missing-list",
-        missing.map(c => c[0]),
-        "All rubric concepts were addressed."
-    );
-
+    fill("#covered-list", result.covered, "No rubric phrase was matched. Different wording is not treated as incorrect.");
+    fill("#missing-list", result.missing.map(phrase => `${phrase} — not matched by this local phrase rule`), "All explicit rubric phrases were matched.");
     fill(
         "#misconception-list",
-        issues,
-        "No common misconception detected in this answer."
+        result.verificationNeeded.map(sentence => `${sentence} — could not be linked to the selected excerpts; verify it manually.`),
+        "No answer sentences required further verification by the local term check."
     );
 
-    // Reveal and scroll to the evaluation section
-    document.querySelector("#evaluation").classList.remove("hidden");
-
-    document.querySelector("#evaluation").scrollIntoView({
-        behavior: "smooth",
+    scopeNote.textContent = "This score uses only the explicit phrase rubric shown above. It cannot understand paraphrases, establish semantic correctness, or prove that a claim is wrong.";
+    evaluationSection.classList.remove("hidden");
+    updateFlow("review");
+    evaluationTitle.focus({ preventScroll: true });
+    evaluationSection.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
         block: "start"
     });
 }
 
+function evaluateReferenceAnswer() {
+    const state = getReferenceState();
+    const result = referenceEvaluator.evaluateReferenceAnswer({
+        question: referenceQuestion.value,
+        answer: transcript.value,
+        referenceText: state.text,
+        rubricText: referenceRubric.value
+    });
 
-// 7. TRANSCRIBE WITH THE BROWSER'S BUILT-IN SPEECH RECOGNITION
+    if (!result.isValid) {
+        validation.textContent = result.reason;
+        referenceRubricStatus.textContent = result.reason;
+        return;
+    }
+
+    validation.textContent = "";
+    showReferenceEvaluation(result);
+}
+
+function setPracticeMode(mode) {
+    practiceMode = mode;
+    const usingReference = isReferenceMode();
+
+    stopRecording("Recording stopped because the practice mode changed.");
+    referenceWorkspace.classList.toggle("hidden", !usingReference);
+    builtInQuestionControl.hidden = usingReference;
+    select.disabled = usingReference;
+    sampleButton.disabled = usingReference;
+    evaluationSection.classList.add("hidden");
+    validation.textContent = "";
+
+    if (usingReference) {
+        renderReferenceQuestion();
+        updateFlow("choose");
+        setStatus("PDF reference mode is ready. You can still type an answer or use browser speech recognition.");
+        return;
+    }
+
+    scopeNote.textContent = "This is a heuristic rubric-coverage score based on predefined phrase rules. It does not validate technical correctness or measure interview readiness.";
+    showQuestion();
+}
+
+function stopRecording(message = "Recording stopped. You can edit the transcript or start again.", tone = "ready") {
+    if (!recognition || !["starting", "listening"].includes(recordingState)) {
+        return false;
+    }
+
+    // Invalidate results from this session before asking the browser to stop.
+    // This prevents a late callback from changing a newer transcript.
+    sessionId += 1;
+    activeSessionId = null;
+    recordingState = "stopping";
+    pendingStopMessage = message;
+    pendingStopTone = tone;
+    updateRecordUi();
+    setStatus("Stopping recording…", "recording");
+
+    try {
+        recognition.stop();
+    } catch {
+        finishStoppedRecording();
+    }
+
+    return true;
+}
+
+function finishStoppedRecording() {
+    recordingState = "idle";
+    activeSessionId = null;
+    updateRecordUi();
+    setStatus(pendingStopMessage || "Recording stopped. You can edit the transcript or start again.", pendingStopTone);
+    pendingStopMessage = "";
+    pendingStopTone = "ready";
+}
+
+function prepareAnswerChange(message) {
+    const wasRecording = stopRecording(message);
+
+    if (!wasRecording) {
+        setStatus(message);
+    }
+}
+
+function showQuestion({ announce = false } = {}) {
+    const question = current();
+
+    if (announce) {
+        prepareAnswerChange("Question changed. Record a new answer or type one below.");
+    }
+
+    document.querySelector("#question-number").textContent = question.number;
+    document.querySelector("#question-text").textContent = question.question;
+    document.querySelector("#question-context").textContent = question.context;
+    renderRubric(question);
+
+    evaluationSection.classList.add("hidden");
+    validation.textContent = "";
+    transcript.value = "";
+    updateFlow("choose");
+}
+
+function fill(id, items, fallback) {
+    const list = document.querySelector(id);
+    list.replaceChildren();
+
+    (items.length ? items : [fallback]).forEach(text => {
+        const item = document.createElement("li");
+        item.textContent = text;
+        list.append(item);
+    });
+}
+
+function evaluate() {
+    stopRecording("Recording stopped. Your answer has been evaluated below.");
+
+    if (isReferenceMode()) {
+        evaluateReferenceAnswer();
+        return;
+    }
+
+    const result = evaluateAnswer(select.value, transcript.value);
+
+    if (!result.isValid) {
+        validation.textContent = `Please provide at least ${MINIMUM_WORDS} words before evaluating. You currently have ${result.wordCount}.`;
+        transcript.focus();
+        return;
+    }
+
+    validation.textContent = "";
+    document.querySelector("#readiness-score").textContent = result.score;
+
+    evaluationTitle.textContent =
+        result.score >= 80
+            ? "Strong rubric coverage"
+            : result.score >= 50
+                ? "Partial rubric coverage — add detail"
+                : "Build the core explanation";
+
+    document.querySelector("#evaluation-summary").textContent =
+        `You addressed ${result.covered.length} of ${current().concepts.length} predefined rubric criteria. ` +
+        (result.issues.length
+            ? "Review the possible misconception below before your next attempt."
+            : "No predefined misconception phrase was detected.");
+
+    fill("#covered-list", result.covered, "Start with a concise definition of the concept.");
+    fill("#missing-list", result.missing, "All predefined rubric criteria were addressed.");
+    fill("#misconception-list", result.issues, "No predefined misconception phrase was detected.");
+
+    evaluationSection.classList.remove("hidden");
+    updateFlow("review");
+
+    evaluationTitle.focus({ preventScroll: true });
+    evaluationSection.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start"
+    });
+}
+
+function startRecording() {
+    if (!recognition || recordingState === "stopping") {
+        return;
+    }
+
+    if (["starting", "listening"].includes(recordingState)) {
+        stopRecording();
+        return;
+    }
+
+    validation.textContent = "";
+    sessionId += 1;
+    activeSessionId = sessionId;
+    finalText = transcript.value.trim();
+    finalText = finalText ? `${finalText} ` : "";
+    recognitionError = "";
+    recordingState = "starting";
+    updateRecordUi();
+    setStatus("Starting microphone…", "recording");
+
+    try {
+        recognition.start();
+    } catch {
+        if (activeSessionId === sessionId) {
+            recordingState = "idle";
+            activeSessionId = null;
+            updateRecordUi();
+            setStatus("Unable to start recording. Wait a moment and try again, or type your answer.", "error");
+        }
+    }
+}
+
 function setupSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-        status.textContent = "Speech recognition is unavailable. Use Chrome or Edge.";
-        record.disabled = true;
+        setStatus("Speech recognition is unavailable in this browser. You can type your answer instead.", "unavailable");
+        updateRecordUi();
         return;
     }
 
@@ -261,18 +412,26 @@ function setupSpeechRecognition() {
     recognition.lang = navigator.language || "en-IN";
 
     recognition.onstart = () => {
-        listening = true;
-        recognitionError = "";
-        finalText = transcript.value.trim();
-        finalText = finalText ? `${finalText} ` : "";
+        if (recordingState !== "starting" || activeSessionId !== sessionId) {
+            try {
+                recognition.stop();
+            } catch {
+                // The session has already ended.
+            }
+            return;
+        }
 
-        record.classList.add("recording");
-        status.classList.add("recording");
-        document.querySelector("#record-label").textContent = "Recording… tap to stop";
-        status.textContent = "Listening… speak now";
+        recordingState = "listening";
+        updateRecordUi();
+        setStatus("Listening… speak now. You can tap the button to stop.", "recording");
+        updateFlow("answer");
     };
 
     recognition.onresult = event => {
+        if (recordingState !== "listening" || activeSessionId !== sessionId) {
+            return;
+        }
+
         let interimText = "";
 
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -290,63 +449,106 @@ function setupSpeechRecognition() {
     };
 
     recognition.onend = () => {
-        listening = false;
-        record.classList.remove("recording");
-        status.classList.remove("recording");
-        document.querySelector("#record-label").textContent = "Start recording";
-        status.textContent = recognitionError || "Speech recognition ready";
+        if (recordingState === "stopping") {
+            finishStoppedRecording();
+            return;
+        }
+
+        if (activeSessionId !== sessionId) {
+            return;
+        }
+
+        recordingState = "idle";
+        activeSessionId = null;
+        updateRecordUi();
+
+        if (recognitionError) {
+            setStatus(recognitionError, "error");
+        } else {
+            setStatus("Recording ended. You can start again or edit the transcript.");
+        }
     };
 
     recognition.onerror = event => {
+        if (recordingState === "stopping" || activeSessionId !== sessionId) {
+            return;
+        }
+
         const messages = {
-            "not-allowed": "Microphone access is blocked. Allow it in the browser, then try again.",
-            "service-not-allowed": "Speech recognition is blocked by this browser.",
-            "audio-capture": "No microphone was found. Connect or enable one, then try again.",
-            "network": "Speech recognition needs an internet connection.",
-            "no-speech": "No speech was detected. Try speaking closer to the microphone.",
-            "aborted": "Recording stopped."
+            "not-allowed": "Microphone access is blocked. Allow it in your browser settings, then try again. You can also type your answer.",
+            "service-not-allowed": "Speech recognition is blocked by this browser. You can type your answer instead.",
+            "audio-capture": "No usable microphone was found. Connect or enable one, then try again. You can also type your answer.",
+            "network": "Speech recognition lost its network service. Check your connection, then try again or type your answer.",
+            "no-speech": "No speech was detected. Try speaking closer to the microphone, then start again.",
+            "aborted": "Recording was interrupted. You can start again or edit the transcript."
         };
 
         recognitionError = messages[event.error] ||
-            `Speech recognition error: ${event.error}`;
-        status.textContent = recognitionError;
+            "Speech recognition could not continue. Try again or type your answer.";
+        setStatus(recognitionError, "error");
     };
+
+    setStatus("Speech recognition is available. Start recording or type your answer.");
+    updateRecordUi();
 }
 
+practiceModeSelect.addEventListener("change", () => setPracticeMode(practiceModeSelect.value));
+select.addEventListener("change", () => showQuestion({ announce: true }));
 
-// 8. EVENT LISTENERS
+referenceQuestion.addEventListener("input", () => {
+    renderReferenceQuestion();
+    invalidateReferenceRubric("Question changed. Refresh the local rubric before evaluating.");
+});
 
-// Update the question when the dropdown changes
-select.addEventListener("change", showQuestion);
+document.querySelector("#generate-reference-button").addEventListener("click", generateReferenceRubric);
 
-// Insert the sample answer
-document.querySelector("#sample-button")
-    .addEventListener("click", () => {
-        transcript.value = current().sample;
-    });
+window.addEventListener("speak2learn:pdf-change", event => {
+    if (isReferenceMode()) {
+        invalidateReferenceRubric(event.detail.message || "Reference text changed. Refresh the local rubric before evaluating.");
+    }
+});
 
-// Evaluate the answer
-document.querySelector("#evaluate-button")
-    .addEventListener("click", evaluate);
+window.addEventListener("speak2learn:pdf-ready", event => {
+    if (isReferenceMode()) {
+        invalidateReferenceRubric(event.detail.message || "PDF reference tools are ready.");
+    }
+});
 
-// Start or stop browser speech recognition
-record.addEventListener("click", () => {
-    if (!recognition) {
+sampleButton.addEventListener("click", () => {
+    if (isReferenceMode()) {
         return;
     }
 
-    if (listening) {
-        recognition.stop();
-    } else {
+    prepareAnswerChange("Sample answer loaded. You can edit it or record again.");
+    transcript.value = current().sample;
+    validation.textContent = "";
+    updateFlow("answer");
+});
+
+document.querySelector("#evaluate-button").addEventListener("click", evaluate);
+record.addEventListener("click", startRecording);
+
+transcript.addEventListener("input", () => {
+    if (["starting", "listening"].includes(recordingState)) {
+        stopRecording("Recording stopped because the transcript was edited. You can continue typing.");
+    }
+
+    if (transcript.value.trim()) {
+        updateFlow("answer");
+    }
+});
+
+window.addEventListener("pagehide", () => {
+    if (recognition && ["starting", "listening"].includes(recordingState)) {
+        sessionId += 1;
+        activeSessionId = null;
         try {
-            recognition.start();
+            recognition.abort();
         } catch {
-            status.textContent = "Unable to start recording. Please try again.";
+            // The browser is already closing the page.
         }
     }
 });
 
-
-// 9. START THE APPLICATION
 showQuestion();
 setupSpeechRecognition();

@@ -52,6 +52,27 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  transform: translateY(-160%);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--navy);
+  padding: 9px 12px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 3px solid #83cdb1;
+  outline-offset: 3px;
+}
+
 /* Main layout */
 
 .shell {
@@ -73,6 +94,10 @@ button:disabled {
   max-width: 1210px;
   margin: 0 auto;
   padding: 42px clamp(25px, 5vw, 70px) 75px;
+}
+
+.main:focus {
+  outline: none;
 }
 
 /* Branding */
@@ -271,6 +296,16 @@ h1 em {
   font-weight: 700;
 }
 
+.selector-controls {
+  display: grid;
+  gap: 12px;
+  flex: 0 0 270px;
+}
+
+.selector-controls label {
+  flex: none;
+}
+
 select {
   width: 100%;
   background: #fff;
@@ -278,6 +313,179 @@ select {
   border-radius: 8px;
   padding: 11px;
   color: var(--ink);
+}
+
+/* PDF reference workspace */
+
+.reference-workspace {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  margin-bottom: 24px;
+}
+
+.reference-heading h2 {
+  font-size: 24px;
+  margin-bottom: 7px;
+}
+
+.reference-heading .muted {
+  max-width: 760px;
+}
+
+.pdf-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.file-picker,
+.secondary-action {
+  border: 1px solid #afd5c3;
+  border-radius: 8px;
+  background: #f3fbf7;
+  color: #116b5b;
+  font-weight: 700;
+}
+
+.file-picker {
+  display: grid;
+  gap: 2px;
+  padding: 11px 13px;
+  cursor: pointer;
+}
+
+.file-picker small {
+  color: #4c6b69;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+#reference-pdf {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+}
+
+#reference-pdf:focus-visible + .pdf-file-details,
+.file-picker:focus-within {
+  outline: 3px solid #83cdb1;
+  outline-offset: 3px;
+}
+
+.pdf-file-details {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #416762;
+  font-size: 13px;
+}
+
+.pdf-file-details button,
+#remove-pdf-button {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdf-status {
+  min-height: 1.45em;
+  margin: 13px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pdf-status.loading {
+  color: #416762;
+}
+
+.pdf-status.success {
+  color: var(--success);
+}
+
+.pdf-status.empty,
+.pdf-status.error {
+  color: var(--danger);
+}
+
+.reference-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.reference-fields label,
+.reference-rubric-label {
+  display: grid;
+  gap: 7px;
+  color: #416762;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reference-fields textarea,
+.reference-rubric-label textarea {
+  min-height: 118px;
+}
+
+.reference-rubric-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin: 18px 0 12px;
+}
+
+.secondary-action {
+  padding: 10px 13px;
+  font-size: 13px;
+}
+
+.secondary-action:hover,
+.file-picker:hover {
+  background: #e3f5eb;
+}
+
+.reference-rubric-actions .muted {
+  margin: 0;
+  flex: 1 1 250px;
+}
+
+.reference-excerpts {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.reference-excerpts h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.reference-excerpts ol {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding-left: 23px;
+}
+
+.reference-excerpts li {
+  color: #456663;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* Interview cards */
@@ -385,6 +593,18 @@ select {
   background: #ffe5e1;
 }
 
+.status.error,
+#transcription-status.error {
+  color: #8d3c33;
+  background: #fff0ed;
+}
+
+.status.unavailable,
+#transcription-status.unavailable {
+  color: #5e6161;
+  background: #edf1f0;
+}
+
 /* Recording button */
 
 .record,
@@ -479,6 +699,14 @@ textarea:focus {
   box-shadow: 0 0 0 3px #dff4eb;
 }
 
+.validation-message {
+  min-height: 1.4em;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
 /* Evaluate answer button */
 
 .evaluate,
@@ -525,8 +753,7 @@ textarea:focus {
   margin-bottom: 7px;
 }
 
-.readiness,
-#readiness-score {
+.readiness {
   flex: 0 0 100px;
   width: 100px;
   height: 100px;
@@ -539,20 +766,17 @@ textarea:focus {
   line-height: 1;
 }
 
-.readiness strong,
-#readiness-score strong {
+.readiness strong {
   font-size: 29px;
 }
 
-.readiness span,
-#readiness-score span {
+.readiness span {
   color: var(--muted);
   font-size: 11px;
   margin-top: 4px;
 }
 
-.readiness small,
-#readiness-score small {
+.readiness small {
   color: var(--muted);
   font-size: 9px;
   margin-top: 5px;
@@ -649,8 +873,17 @@ textarea:focus {
     max-width: 100%;
   }
 
+  .selector-controls {
+    max-width: 100%;
+  }
+
+  .selector-controls label {
+    margin-top: 0;
+  }
+
   .interview-grid,
-  .results-grid {
+  .results-grid,
+  .reference-fields {
     grid-template-columns: 1fr;
   }
 }
@@ -670,7 +903,8 @@ textarea:focus {
 
   .question-card,
   .answer-card,
-  .evaluation {
+  .evaluation,
+  .reference-workspace {
     padding: 22px;
   }
 
@@ -683,13 +917,25 @@ textarea:focus {
     display: block;
   }
 
-  .readiness,
-  #readiness-score {
+  .readiness {
     margin-top: 18px;
   }
 
   .transcript-head {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .record,
+  #record-button,
+  .evaluate,
+  #evaluate-button {
+    transition: none;
   }
 }
