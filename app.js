@@ -2,9 +2,8 @@
 // Rubric data and evaluation logic live in evaluator.js so they can be tested in Node.js.
 
 const evaluator = window.Speak2LearnEvaluator;
-const referenceEvaluator = window.Speak2LearnReferenceEvaluator;
 
-if (!evaluator || !referenceEvaluator) {
+if (!evaluator) {
     throw new Error("Speak2Learn evaluation helpers could not be loaded.");
 }
 
@@ -15,10 +14,14 @@ const practiceModeSelect = document.querySelector("#practice-mode");
 const builtInQuestionControl = document.querySelector("#built-in-question-control");
 const referenceWorkspace = document.querySelector("#reference-workspace");
 const referenceQuestion = document.querySelector("#reference-question");
-const referenceRubric = document.querySelector("#reference-rubric");
 const referenceRubricStatus = document.querySelector("#reference-rubric-status");
 const referenceExcerptsList = document.querySelector("#reference-excerpts-list");
 const referenceExcerptsEmpty = document.querySelector("#reference-excerpts-empty");
+const generateAiQuestionsButton = document.querySelector("#generate-ai-questions-button");
+const generatedQuestionControl = document.querySelector("#generated-question-control");
+const generatedQuestionSelect = document.querySelector("#generated-question-select");
+const generatedQuestionRubric = document.querySelector("#generated-question-rubric");
+const generatedRubricList = document.querySelector("#generated-rubric-list");
 const sampleButton = document.querySelector("#sample-button");
 const transcript = document.querySelector("#transcript");
 const record = document.querySelector("#record-button");
@@ -38,6 +41,10 @@ let pendingStopMessage = "";
 let pendingStopTone = "ready";
 let recognitionError = "";
 let practiceMode = "built-in";
+let generatedQuestions = [];
+let selectedGeneratedQuestion = null;
+let questionRequestId = 0;
+let evaluationRequestId = 0;
 
 Object.entries(questions).forEach(([key, question]) => {
     select.add(new Option(question.label, key));
@@ -104,31 +111,29 @@ function renderRubric(question) {
     });
 }
 
-function renderReferenceRubricGuidance() {
-    const list = document.querySelector("#rubric-list");
-    const guidance = [
-        "A specific question linked to the PDF",
-        "Reference excerpts selected by local term overlap",
-        "An explicit, reviewable phrase rubric",
-        "Coverage only — not semantic correctness"
-    ];
+function renderReferenceQuestion() {
+    const questionText = selectedGeneratedQuestion?.question || "";
+    document.querySelector("#question-number").textContent = "PDF";
+    document.querySelector("#question-text").textContent = questionText || "Generate a question from your reference PDF";
+    document.querySelector("#question-context").textContent = questionText
+        ? `AI-generated ${selectedGeneratedQuestion.difficulty} question. Answer in your own words; its source citations are checked against the PDF.`
+        : "Upload a text-based PDF, choose a difficulty and question count, then generate source-grounded questions.";
 
+    const list = document.querySelector("#rubric-list");
     list.replaceChildren();
-    guidance.forEach(text => {
+    (selectedGeneratedQuestion?.rubric || []).forEach(criterion => {
         const item = document.createElement("li");
-        item.textContent = text;
+        item.textContent = criterion.concept;
         list.append(item);
     });
-}
 
-function renderReferenceQuestion() {
-    const questionText = referenceQuestion.value.trim();
-    document.querySelector("#question-number").textContent = "PDF";
-    document.querySelector("#question-text").textContent = questionText || "Ask a question about your reference PDF";
-    document.querySelector("#question-context").textContent = questionText
-        ? "The evaluator will only use locally selected excerpts that share meaningful terms with this question."
-        : "Upload a text-based PDF, then ask a specific question. Review its extracted text and phrase rubric before evaluation.";
-    renderReferenceRubricGuidance();
+    generatedRubricList.replaceChildren();
+    (selectedGeneratedQuestion?.rubric || []).forEach(criterion => {
+        const item = document.createElement("li");
+        item.textContent = `${criterion.concept}: ${criterion.explanation}`;
+        generatedRubricList.append(item);
+    });
+    generatedQuestionRubric.classList.toggle("hidden", !selectedGeneratedQuestion);
 }
 
 function clearReferenceExcerpts(message = "No excerpts selected yet.") {
@@ -138,66 +143,155 @@ function clearReferenceExcerpts(message = "No excerpts selected yet.") {
 }
 
 function invalidateReferenceRubric(message) {
-    referenceRubric.value = "";
+    questionRequestId += 1;
+    evaluationRequestId += 1;
+    generateAiQuestionsButton.disabled = false;
+    document.querySelector("#evaluate-button").disabled = false;
+    generatedQuestions = [];
+    selectedGeneratedQuestion = null;
+    generatedQuestionSelect.replaceChildren();
+    generatedQuestionControl.classList.add("hidden");
+    generatedQuestionRubric.classList.add("hidden");
     referenceRubricStatus.textContent = message;
-    clearReferenceExcerpts("Refresh the local rubric to select excerpts for the current question and text.");
+    clearReferenceExcerpts("Generate questions to see excerpts from the PDF.");
+    if (isReferenceMode()) {
+        renderReferenceQuestion();
+        evaluationSection.classList.add("hidden");
+    }
 }
 
 function renderReferenceExcerpts(passages) {
     referenceExcerptsList.replaceChildren();
     referenceExcerptsEmpty.hidden = Boolean(passages.length);
 
-    passages.forEach((passage, index) => {
+    passages.forEach(passage => {
         const item = document.createElement("li");
-        const excerpt = passage.text.length > 520
-            ? `${passage.text.slice(0, 520)}…`
-            : passage.text;
-        item.textContent = `Excerpt ${index + 1} (matched: ${passage.matchedTerms.join(", ")}): ${excerpt}`;
+        const text = passage.excerpt || passage.text || "";
+        const excerpt = text.length > 520 ? `${text.slice(0, 520)}…` : text;
+        item.textContent = `Page ${passage.pageNumber}: ${excerpt}`;
         referenceExcerptsList.append(item);
     });
 }
 
-function generateReferenceRubric() {
+async function generateAiQuestions() {
     const state = getReferenceState();
 
-    if (!state.text.trim()) {
-        referenceRubricStatus.textContent = "Upload a text-based PDF or add extracted reference text before creating a rubric.";
+    if (!state.pages.length) {
+        referenceRubricStatus.textContent = "Upload a text-based PDF before generating questions.";
         clearReferenceExcerpts("No reference text is available.");
         return;
     }
 
-    const result = referenceEvaluator.buildReferenceRubric(state.text, referenceQuestion.value);
-    renderReferenceExcerpts(result.passages);
-    referenceRubric.value = result.concepts.join("\n");
+    generateAiQuestionsButton.disabled = true;
+    const thisRequestId = ++questionRequestId;
+    referenceRubricStatus.textContent = "Finding relevant PDF passages and generating questions with Gemini…";
+    clearReferenceExcerpts("Waiting for generated questions.");
+    try {
+        const response = await fetch("/api/questions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                pages: state.pages,
+                difficulty: document.querySelector("#question-difficulty").value,
+                count: Number(document.querySelector("#question-count").value),
+                topic: referenceQuestion.value.trim()
+            })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            const diagnostic = result.diagnostic
+                ? ` [${result.diagnostic.category}; ${result.diagnostic.model}; provider HTTP ${result.diagnostic.httpStatus ?? "not reached"}; app HTTP ${result.diagnostic.responseStatus}; ${result.diagnostic.providerCode}]`
+                : "";
+            throw new Error(`${result.error || "Question generation failed. Please try again."}${diagnostic}`);
+        }
+        if (thisRequestId !== questionRequestId || !isReferenceMode()) {
+            return;
+        }
 
-    if (!result.passages.length) {
-        referenceRubricStatus.textContent = "No relevant excerpts were found by local term rules. Use a more specific question or review the extracted text.";
-        return;
+        generatedQuestions = result.questions;
+        generatedQuestionSelect.replaceChildren();
+        generatedQuestions.forEach((question, index) => {
+            generatedQuestionSelect.add(new Option(`${index + 1}. ${question.question}`, String(index)));
+        });
+        generatedQuestionControl.classList.remove("hidden");
+        selectedGeneratedQuestion = generatedQuestions[0] || null;
+        renderReferenceQuestion();
+        renderReferenceExcerpts(selectedGeneratedQuestion?.citations || []);
+        referenceRubricStatus.textContent = `Generated ${generatedQuestions.length} question${generatedQuestions.length === 1 ? "" : "s"} grounded in the PDF. Review their cited excerpts and rubric before answering.`;
+        evaluationSection.classList.add("hidden");
+        transcript.value = "";
+        updateFlow("choose");
+    } catch (error) {
+        if (thisRequestId === questionRequestId) {
+            referenceRubricStatus.textContent = error.message || "Question generation failed. Check your connection and try again.";
+            clearReferenceExcerpts("No verified excerpts are available.");
+        }
+    } finally {
+        if (thisRequestId === questionRequestId) {
+            generateAiQuestionsButton.disabled = false;
+        }
     }
-
-    if (!result.concepts.length) {
-        referenceRubricStatus.textContent = "Relevant excerpts were found, but no useful two-word phrases could be suggested. Add phrases from the excerpts manually.";
-        return;
-    }
-
-    referenceRubricStatus.textContent = `Selected ${result.passages.length} relevant excerpt${result.passages.length === 1 ? "" : "s"}. Review or edit the suggested phrases before evaluating.`;
 }
 
 function showReferenceEvaluation(result) {
     document.querySelector("#readiness-score").textContent = result.score;
-    evaluationTitle.textContent = "Reference phrase coverage";
+    evaluationTitle.textContent = "AI answer evaluation";
     document.querySelector("#evaluation-summary").textContent =
-        `Your answer matched ${result.covered.length} of ${result.rubric.length} explicit phrase rubric criteria from ${result.passages.length} selected reference excerpt${result.passages.length === 1 ? "" : "s"}.`;
+        `Gemini assessed your response against ${selectedGeneratedQuestion.rubric.length} PDF-derived rubric concepts. Review the supporting citations and uncertainty below.`;
 
-    fill("#covered-list", result.covered, "No rubric phrase was matched. Different wording is not treated as incorrect.");
-    fill("#missing-list", result.missing.map(phrase => `${phrase} — not matched by this local phrase rule`), "All explicit rubric phrases were matched.");
+    fill(
+        "#covered-list",
+        result.rubricResults.filter(item => item.status === "covered")
+            .map(item => `${item.concept} — ${item.feedback}`),
+        "No rubric concepts were fully covered."
+    );
+    fill(
+        "#partial-list",
+        result.rubricResults.filter(item => item.status === "partial")
+            .map(item => `${item.concept} — ${item.feedback}`),
+        "No rubric concepts were marked partially covered."
+    );
+    fill(
+        "#missing-list",
+        result.rubricResults.filter(item => item.status === "missing")
+            .map(item => `${item.concept} — ${item.feedback}`),
+        "All rubric concepts were addressed."
+    );
+    fill(
+        "#supported-list",
+        result.supportedClaims.map(item => `${item.claim} — ${item.explanation}`),
+        "No separate answer claims were verified against the supplied passages."
+    );
     fill(
         "#misconception-list",
-        result.verificationNeeded.map(sentence => `${sentence} — could not be linked to the selected excerpts; verify it manually.`),
-        "No answer sentences required further verification by the local term check."
+        result.inaccurateClaims.map(item => `${item.claim} — ${item.explanation}`),
+        "No claims were identified as contradicted by the supplied PDF passages."
     );
+    fill(
+        "#unverified-list",
+        result.unverifiedClaims.map(item => `${item.claim} — ${item.explanation}`),
+        "No answer claims were identified as unverified."
+    );
+    document.querySelector("#improvements-panel").classList.toggle("hidden", !result.suggestedImprovements.length);
+    fill("#improvements-list", result.suggestedImprovements, "No additional improvement was suggested.");
+    document.querySelector("#evaluation-uncertainty").textContent = result.uncertainty.isUncertain
+        ? `Uncertainty: ${result.uncertainty.explanation}`
+        : result.uncertainty.explanation || "No specific uncertainty was reported; this does not guarantee correctness.";
 
-    scopeNote.textContent = "This score uses only the explicit phrase rubric shown above. It cannot understand paraphrases, establish semantic correctness, or prove that a claim is wrong.";
+    const uniqueCitations = [...new Map(result.citations.map(citation =>
+        [citation.passageId, citation]
+    )).values()];
+    const citationsSection = document.querySelector("#evaluation-citations");
+    citationsSection.classList.toggle("hidden", uniqueCitations.length === 0);
+    const citationsList = document.querySelector("#evaluation-citations-list");
+    citationsList.replaceChildren();
+    uniqueCitations.forEach(citation => {
+        const item = document.createElement("li");
+        item.textContent = `Page ${citation.pageNumber}: ${citation.excerpt}`;
+        citationsList.append(item);
+    });
+
+    scopeNote.textContent = "AI feedback is an estimate, not a validated grade. It may miss errors or misread context; inspect the cited PDF excerpts. Accurate paraphrases are intended to count.";
     evaluationSection.classList.remove("hidden");
     updateFlow("review");
     evaluationTitle.focus({ preventScroll: true });
@@ -207,23 +301,50 @@ function showReferenceEvaluation(result) {
     });
 }
 
-function evaluateReferenceAnswer() {
+async function evaluateReferenceAnswer() {
     const state = getReferenceState();
-    const result = referenceEvaluator.evaluateReferenceAnswer({
-        question: referenceQuestion.value,
-        answer: transcript.value,
-        referenceText: state.text,
-        rubricText: referenceRubric.value
-    });
-
-    if (!result.isValid) {
-        validation.textContent = result.reason;
-        referenceRubricStatus.textContent = result.reason;
+    if (!selectedGeneratedQuestion) {
+        validation.textContent = "Generate and select a question from the PDF before evaluating.";
+        return;
+    }
+    if (!state.pages.length) {
+        validation.textContent = "Upload a readable PDF before evaluating this answer.";
         return;
     }
 
-    validation.textContent = "";
-    showReferenceEvaluation(result);
+    const evaluateButton = document.querySelector("#evaluate-button");
+    evaluateButton.disabled = true;
+    const thisRequestId = ++evaluationRequestId;
+    const evaluatedQuestion = selectedGeneratedQuestion;
+    validation.textContent = "Evaluating your answer against the PDF…";
+    try {
+        const response = await fetch("/api/evaluate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                pages: state.pages,
+                question: selectedGeneratedQuestion,
+                answer: transcript.value
+            })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || "Answer evaluation failed. Please try again.");
+        }
+        if (thisRequestId !== evaluationRequestId || selectedGeneratedQuestion !== evaluatedQuestion || !isReferenceMode()) {
+            return;
+        }
+        validation.textContent = "";
+        showReferenceEvaluation(result.evaluation);
+    } catch (error) {
+        if (thisRequestId === evaluationRequestId) {
+            validation.textContent = error.message || "Answer evaluation failed. Check your connection and try again.";
+        }
+    } finally {
+        if (thisRequestId === evaluationRequestId) {
+            evaluateButton.disabled = false;
+        }
+    }
 }
 
 function setPracticeMode(mode) {
@@ -240,11 +361,15 @@ function setPracticeMode(mode) {
 
     if (usingReference) {
         renderReferenceQuestion();
+        invalidateReferenceRubric("Upload a PDF and generate questions to begin PDF practice.");
         updateFlow("choose");
-        setStatus("PDF reference mode is ready. You can still type an answer or use browser speech recognition.");
+        setStatus("PDF AI practice is ready. Type your answer or use browser speech recognition.");
         return;
     }
 
+    document.querySelector("#improvements-panel").classList.add("hidden");
+    document.querySelector("#evaluation-uncertainty").textContent = "";
+    document.querySelector("#evaluation-citations").classList.add("hidden");
     scopeNote.textContent = "This is a heuristic rubric-coverage score based on predefined phrase rules. It does not validate technical correctness or measure interview readiness.";
     showQuestion();
 }
@@ -319,11 +444,11 @@ function fill(id, items, fallback) {
     });
 }
 
-function evaluate() {
+async function evaluate() {
     stopRecording("Recording stopped. Your answer has been evaluated below.");
 
     if (isReferenceMode()) {
-        evaluateReferenceAnswer();
+        await evaluateReferenceAnswer();
         return;
     }
 
@@ -352,8 +477,11 @@ function evaluate() {
             : "No predefined misconception phrase was detected.");
 
     fill("#covered-list", result.covered, "Start with a concise definition of the concept.");
+    fill("#partial-list", [], "Partial coverage is only available in PDF rubric evaluation.");
     fill("#missing-list", result.missing, "All predefined rubric criteria were addressed.");
+    fill("#supported-list", [], "Claim verification is only available in PDF practice.");
     fill("#misconception-list", result.issues, "No predefined misconception phrase was detected.");
+    fill("#unverified-list", [], "Claim verification is only available in PDF practice.");
 
     evaluationSection.classList.remove("hidden");
     updateFlow("review");
@@ -496,21 +624,29 @@ practiceModeSelect.addEventListener("change", () => setPracticeMode(practiceMode
 select.addEventListener("change", () => showQuestion({ announce: true }));
 
 referenceQuestion.addEventListener("input", () => {
-    renderReferenceQuestion();
-    invalidateReferenceRubric("Question changed. Refresh the local rubric before evaluating.");
+    invalidateReferenceRubric("Topic focus changed. Generate questions again to use the updated topic.");
 });
 
-document.querySelector("#generate-reference-button").addEventListener("click", generateReferenceRubric);
+generateAiQuestionsButton.addEventListener("click", generateAiQuestions);
+
+generatedQuestionSelect.addEventListener("change", () => {
+    selectedGeneratedQuestion = generatedQuestions[Number(generatedQuestionSelect.value)] || null;
+    renderReferenceQuestion();
+    renderReferenceExcerpts(selectedGeneratedQuestion?.citations || []);
+    evaluationSection.classList.add("hidden");
+    validation.textContent = "";
+    transcript.value = "";
+});
 
 window.addEventListener("speak2learn:pdf-change", event => {
     if (isReferenceMode()) {
-        invalidateReferenceRubric(event.detail.message || "Reference text changed. Refresh the local rubric before evaluating.");
+        invalidateReferenceRubric(event.detail.message || "PDF changed. Generate new questions before evaluating.");
     }
 });
 
 window.addEventListener("speak2learn:pdf-ready", event => {
     if (isReferenceMode()) {
-        invalidateReferenceRubric(event.detail.message || "PDF reference tools are ready.");
+        invalidateReferenceRubric(event.detail.message || "PDF tools are ready.");
     }
 });
 

@@ -124,7 +124,7 @@
                 <div>
                     <p class="eyebrow">Local PDF reference</p>
                     <h2 id="reference-heading">Learn from your own reference material</h2>
-                    <p class="muted">The PDF stays in this browser. Text extraction and phrase matching run locally; OCR and semantic AI comparison are not included.</p>
+                    <p class="muted">PDF.js extracts text locally. Only selected text passages are sent to the server for Gemini question generation and answer evaluation; the PDF file and audio are not uploaded.</p>
                 </div>
             </div>
 
@@ -145,28 +145,50 @@
 
             <div class="reference-fields">
                 <label>
-                    Question about this PDF
-                    <textarea id="reference-question" rows="3" placeholder="For example: How does the document explain database indexing?"></textarea>
+                    Optional topic focus
+                    <textarea id="reference-question" rows="3" placeholder="For example: database indexing (leave blank to cover the document broadly)"></textarea>
                 </label>
 
                 <label>
-                    Extracted reference text — review or correct it
-                    <textarea id="reference-text" rows="9" placeholder="Extracted PDF text appears here. You may correct it before creating a rubric."></textarea>
+                    Extracted PDF text — page numbers preserved
+                    <textarea id="reference-text" rows="9" readonly placeholder="Extracted PDF pages appear here."></textarea>
                 </label>
             </div>
 
             <div class="reference-rubric-actions">
-                <button id="generate-reference-button" class="secondary-action" type="button">Find relevant excerpts and suggest rubric phrases</button>
-                <p id="reference-rubric-status" class="muted" aria-live="polite">Upload a PDF, add a specific question, then create a local phrase rubric.</p>
+                <label>
+                    Difficulty
+                    <select id="question-difficulty">
+                        <option value="easy">Easy</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </label>
+                <label>
+                    Number of questions
+                    <select id="question-count">
+                        <option value="1">1</option>
+                        <option value="3" selected>3</option>
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
+                <button id="generate-ai-questions-button" class="secondary-action" type="button">Generate PDF questions</button>
+                <p id="reference-rubric-status" class="muted" aria-live="polite">Upload a text-based PDF, choose difficulty and question count, then generate questions grounded in its passages.</p>
             </div>
 
-            <label class="reference-rubric-label">
-                Explicit local rubric phrases (one two-or-more-word phrase per line)
-                <textarea id="reference-rubric" rows="5" placeholder="Suggested phrases from selected excerpts appear here. Review or edit them before evaluation."></textarea>
+            <label id="generated-question-control" class="reference-rubric-label hidden">
+                Generated question
+                <select id="generated-question-select" aria-label="Generated PDF question"></select>
             </label>
 
+            <section id="generated-question-rubric" class="reference-excerpts hidden" aria-labelledby="generated-rubric-heading">
+                <h3 id="generated-rubric-heading">Question-specific rubric from the PDF</h3>
+                <ol id="generated-rubric-list"></ol>
+            </section>
+
             <section class="reference-excerpts" aria-labelledby="reference-excerpts-heading">
-                <h3 id="reference-excerpts-heading">Relevant reference excerpts</h3>
+                <h3 id="reference-excerpts-heading">Supporting PDF excerpts</h3>
                 <p id="reference-excerpts-empty" class="muted">No excerpts selected yet.</p>
                 <ol id="reference-excerpts-list"></ol>
             </section>
@@ -255,9 +277,7 @@
                 </button>
 
                 <p class="security-note">
-                    This free version uses your browser's speech-recognition
-                    feature. It does not send audio to OpenAI or require an
-                    API key.
+                    Browser speech recognition may use a browser-managed speech service. Only the transcript is sent to the local Node.js server and Gemini for AI evaluation; audio is not sent by Speak2Learn.
                 </p>
             </article>
         </section>
@@ -298,23 +318,45 @@
                 </article>
 
                 <article>
+                    <h3>Partially covered concepts</h3>
+                    <ul id="partial-list" class="result-list"></ul>
+                </article>
+
+                <article>
                     <h3>Missing concepts</h3>
                     <ul id="missing-list"
                         class="result-list missing"></ul>
                 </article>
 
                 <article>
-                    <h3>Possible misconceptions</h3>
+                    <h3>PDF-supported claims</h3>
+                    <ul id="supported-list" class="result-list covered"></ul>
+                </article>
+
+                <article>
+                    <h3>Inaccurate claims</h3>
                     <ul id="misconception-list"
                         class="result-list misconception"></ul>
                 </article>
 
+                <article>
+                    <h3>Unverified claims</h3>
+                    <ul id="unverified-list" class="result-list"></ul>
+                </article>
+                <article id="improvements-panel" class="hidden">
+                    <h3>Suggested improvements</h3>
+                    <ul id="improvements-list" class="result-list"></ul>
+                </article>
             </div>
 
+            <p id="evaluation-uncertainty" class="muted" aria-live="polite"></p>
+            <section id="evaluation-citations" class="reference-excerpts hidden" aria-labelledby="evaluation-citations-heading">
+                <h3 id="evaluation-citations-heading">Supporting PDF excerpts</h3>
+                <ol id="evaluation-citations-list"></ol>
+            </section>
+
             <p class="scope-note">
-                This is a heuristic rubric-coverage score based on predefined
-                phrase rules. It does not validate technical correctness or
-                measure interview readiness.
+                AI feedback is an estimate based on the supplied PDF passages, not a validated grade or proof of correctness. Review its citations and uncertainty.
             </p>
         </section>
 

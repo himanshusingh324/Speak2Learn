@@ -1,10 +1,14 @@
 const http = require("node:http");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+require("dotenv").config();
+const { RequestError } = require("./pdf-ai-core.js");
+const { createGeminiProvider, ProviderError } = require("./gemini-provider.js");
 
 const rootDirectory = __dirname;
 const configuredPort = Number.parseInt(process.env.PORT || "3000", 10);
 const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 
 const staticFiles = new Map([
     ["/", ["index.html", "text/html; charset=utf-8"]],
@@ -38,6 +42,47 @@ function sendJson(response, statusCode, body) {
     response.end(JSON.stringify(body));
 }
 
+function providerDiagnostic(error) {
+    if (!(error instanceof ProviderError)) {
+        return undefined;
+    }
+    return {
+        category: error.diagnostic.category || "provider_error",
+        model: error.diagnostic.model || process.env.GEMINI_MODEL || "unset",
+        httpStatus: error.diagnostic.httpStatus ?? null,
+        responseStatus: error.statusCode,
+        providerCode: error.diagnostic.providerCode || "UNKNOWN"
+    };
+}
+
+function hasSameOrigin(request) {
+    try {
+        return Boolean(request.headers.origin) &&
+            new URL(request.headers.origin).origin === `http://${request.headers.host}`;
+    } catch {
+        return false;
+    }
+}
+
+async function readJsonBody(request) {
+    const chunks = [];
+    let byteLength = 0;
+
+    for await (const chunk of request) {
+        byteLength += chunk.length;
+        if (byteLength > MAX_REQUEST_BYTES) {
+            throw new RequestError(413, "This request is too large. Try a shorter PDF.");
+        }
+        chunks.push(chunk);
+    }
+
+    try {
+        return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+        throw new RequestError(400, "The request data is invalid. Refresh the page and try again.");
+    }
+}
+
 async function serveStaticFile(request, response) {
     const pathname = new URL(request.url, "http://localhost").pathname;
     const file = staticFiles.get(pathname);
@@ -63,17 +108,45 @@ async function serveStaticFile(request, response) {
     response.end(content);
 }
 
-function createServer() {
+function createServer({ provider = createGeminiProvider() } = {}) {
     return http.createServer(async (request, response) => {
         try {
-            if (request.method === "GET" || request.method === "HEAD") {
+            const pathname = new URL(request.url, "http://localhost").pathname;
+
+            if (request.method === "POST" &&
+                (pathname === "/api/questions" || pathname === "/api/evaluate")) {
+                if (!hasSameOrigin(request)) {
+                    sendJson(response, 403, { error: "Cross-origin AI requests are not allowed." });
+                    return;
+                }
+                const body = await readJsonBody(request);
+                if (pathname === "/api/questions") {
+                    sendJson(response, 200, { questions: await provider.generateQuestions(body) });
+                    return;
+                }
+                if (pathname === "/api/evaluate") {
+                    sendJson(response, 200, { evaluation: await provider.evaluateAnswer(body) });
+                    return;
+                }
+            } else if (request.method === "GET" || request.method === "HEAD") {
                 await serveStaticFile(request, response);
                 return;
+            } else {
+                sendJson(response, 405, { error: "Method not allowed" });
+                return;
             }
-
-            sendJson(response, 405, { error: "Method not allowed" });
         } catch (error) {
-            console.error("Request failed:", error);
+            if (response.headersSent) {
+                response.destroy();
+                return;
+            }
+            if (error instanceof RequestError || error instanceof ProviderError) {
+                const diagnostic = providerDiagnostic(error);
+                sendJson(response, error.statusCode, diagnostic
+                    ? { error: error.message, diagnostic }
+                    : { error: error.message });
+                return;
+            }
             sendJson(response, 500, { error: "The server could not process this request." });
         }
     });
@@ -85,4 +158,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createServer };
+module.exports = { createServer, readJsonBody, hasSameOrigin, providerDiagnostic, MAX_REQUEST_BYTES };

@@ -35,7 +35,7 @@ test("text extraction returns only extractable text from a PDF document", async 
                 async getTextContent() {
                     return pageNumber === 1
                         ? { items: [{ str: "Local PDF text" }, { str: "is extracted safely." }] }
-                        : { items: [] };
+                        : { items: [{ str: "Second PDF page." }] };
                 }
             };
         }
@@ -43,8 +43,8 @@ test("text extraction returns only extractable text from a PDF document", async 
 
     const result = await extractTextFromPdfDocument(document);
     assert.equal(result.status, "success");
-    assert.equal(result.pages.length, 1);
-    assert.equal(result.text, "Local PDF text is extracted safely.");
+    assert.deepEqual(result.pages.map(page => page.pageNumber), [1, 2]);
+    assert.equal(result.text, "Local PDF text is extracted safely.\n\nSecond PDF page.");
 });
 
 test("image-only or empty PDF documents report an empty extraction state", async () => {

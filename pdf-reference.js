@@ -32,8 +32,11 @@ function render() {
     fileName.textContent = state.fileName;
     removeButton.hidden = !state.fileName && !state.text;
 
-    if (textArea.value !== state.text) {
-        textArea.value = state.text;
+    const displayText = state.pages.length
+        ? state.pages.map(page => `[Page ${page.pageNumber}]\n${page.text}`).join("\n\n")
+        : state.text;
+    if (textArea.value !== displayText) {
+        textArea.value = displayText;
     }
 }
 
@@ -159,16 +162,6 @@ fileInput.addEventListener("change", event => {
 
 removeButton.addEventListener("click", clearPdf);
 
-textArea.addEventListener("input", () => {
-    publish({
-        text: textArea.value,
-        phase: textArea.value.trim() ? "success" : "empty",
-        message: textArea.value.trim()
-            ? "Reference text updated locally. Refresh the local rubric before evaluating."
-            : "Reference text is empty. Add text or upload a text-based PDF."
-    });
-});
-
-window.Speak2LearnPdfReference = { getState, clearPdf, setReferenceText: text => publish({ text }) };
+window.Speak2LearnPdfReference = { getState, clearPdf };
 render();
 window.dispatchEvent(new CustomEvent("speak2learn:pdf-ready", { detail: getState() }));
